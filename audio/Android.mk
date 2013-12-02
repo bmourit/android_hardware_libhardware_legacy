@@ -27,6 +27,26 @@ ifeq ($(AUDIO_POLICY_TEST),true)
   LOCAL_CFLAGS += -DAUDIO_POLICY_TEST
 endif
 
+ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
+
+ifneq ($(strip $(AUDIO_FEATURE_DISABLED_FM)),true)
+LOCAL_CFLAGS += -DAUDIO_EXTN_FM_ENABLED
+endif
+ifneq ($(strip $(AUDIO_FEATURE_DISABLED_SSR)),true)
+LOCAL_CFLAGS += -DAUDIO_EXTN_SSR_ENABLED
+endif
+ifneq ($(strip $(AUDIO_FEATURE_DISABLED_PROXY_DEVICE)),true)
+LOCAL_CFLAGS += -DAUDIO_EXTN_AFE_PROXY_ENABLED
+endif
+ifneq ($(strip $(AUDIO_FEATURE_DISABLED_INCALL_MUSIC)),true)
+LOCAL_CFLAGS += -DAUDIO_EXTN_INCALL_MUSIC_ENABLED
+endif
+ifneq ($(strip $(AUDIO_FEATURE_DISABLED_FORMATS)),true)
+LOCAL_CFLAGS += -DAUDIO_EXTN_FORMATS_ENABLED
+endif
+
+endif
+
 LOCAL_STATIC_LIBRARIES := libmedia_helper
 LOCAL_MODULE := libaudiopolicy_legacy
 LOCAL_MODULE_TAGS := optional
@@ -56,6 +76,29 @@ LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
+
+ifeq ($(TARGET_BOARD_PLATFORM),ATM702X)
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := \
+    AudioHardware.cpp
+
+LOCAL_SHARED_LIBRARIES := \
+    libcutils \
+    libutils
+
+LOCAL_STATIC_LIBRARIES := \
+    libmedia_helper
+
+LOCAL_WHOLE_STATIC_LIBRARIES := \
+    libaudiohw_legacy
+
+LOCAL_MODULE := audio.primary.default
+LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+LOCAL_MODULE_TAGS := optional
+
+include $(BUILD_SHARED_LIBRARY)
+endif
 
 #ifeq ($(ENABLE_AUDIO_DUMP),true)
 #  LOCAL_SRC_FILES += AudioDumpInterface.cpp

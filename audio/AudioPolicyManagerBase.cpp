@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -516,7 +518,7 @@ AudioPolicyManagerBase::IOProfile *AudioPolicyManagerBase::getProfileForDirectOu
             } else {
                 if (profile->isCompatibleProfile(device, samplingRate, format,
                                            channelMask,
-                                           AUDIO_OUTPUT_FLAG_DIRECT)) {
+                                           (audio_output_flags_t)(AUDIO_OUTPUT_FLAG_DIRECT | flags))) {
                     if (mAvailableOutputDevices & profile->mSupportedDevices) {
                         return mHwModules[i]->mOutputProfiles[j];
                     }
@@ -538,6 +540,7 @@ audio_io_handle_t AudioPolicyManagerBase::getOutput(AudioSystem::stream_type str
     uint32_t latency = 0;
     routing_strategy strategy = getStrategy((AudioSystem::stream_type)stream);
     audio_devices_t device = getDeviceForStrategy(strategy, false /*fromCache*/);
+    IOProfile *profile = NULL;
     ALOGV("getOutput() device %d, stream %d, samplingRate %d, format %x, channelMask %x, flags %x",
           device, stream, samplingRate, format, channelMask, flags);
 
@@ -582,11 +585,14 @@ audio_io_handle_t AudioPolicyManagerBase::getOutput(AudioSystem::stream_type str
         flags = (AudioSystem::output_flags)(flags | AUDIO_OUTPUT_FLAG_DIRECT);
     }
 
-    IOProfile *profile = getProfileForDirectOutput(device,
-                                                   samplingRate,
-                                                   format,
-                                                   channelMask,
-                                                   (audio_output_flags_t)flags);
+    if (flags & AUDIO_OUTPUT_FLAG_DIRECT) {
+        profile = getProfileForDirectOutput(device,
+                                            samplingRate,
+                                            format,
+                                            channelMask,
+                                            (audio_output_flags_t)flags);
+    }
+
     if (profile != NULL) {
         AudioOutputDescriptor *outputDesc = NULL;
 
@@ -1107,7 +1113,10 @@ status_t AudioPolicyManagerBase::setStreamVolumeIndex(AudioSystem::stream_type s
     for (size_t i = 0; i < mOutputs.size(); i++) {
         audio_devices_t curDevice =
                 getDeviceForVolume(mOutputs.valueAt(i)->device());
-        if ((device == AUDIO_DEVICE_OUT_DEFAULT) || (device == curDevice)) {
+#ifndef ICS_AUDIO_BLOB
+        if ((device == AUDIO_DEVICE_OUT_DEFAULT) || (device == curDevice))
+#endif
+        {
             status_t volStatus = checkAndSetVolume(stream, index, mOutputs.keyAt(i), curDevice);
             if (volStatus != NO_ERROR) {
                 status = volStatus;
@@ -1124,6 +1133,7 @@ status_t AudioPolicyManagerBase::getStreamVolumeIndex(AudioSystem::stream_type s
     if (index == NULL) {
         return BAD_VALUE;
     }
+#ifndef ICS_AUDIO_BLOB
     if (!audio_is_output_device(device)) {
         return BAD_VALUE;
     }
@@ -1135,6 +1145,9 @@ status_t AudioPolicyManagerBase::getStreamVolumeIndex(AudioSystem::stream_type s
     device = getDeviceForVolume(device);
 
     *index =  mStreams[stream].getVolumeIndex(device);
+#else
+    *index =  mStreams[stream].mIndexCur.valueAt(0);
+#endif
     ALOGV("getStreamVolumeIndex() stream %d device %08x index %d", stream, device, *index);
     return NO_ERROR;
 }
@@ -1457,8 +1470,15 @@ bool AudioPolicyManagerBase::isOffloadSupported(const audio_offload_info_t& offl
     //TODO: enable audio offloading with video when ready
     if (offloadInfo.has_video)
     {
-        ALOGV("isOffloadSupported: has_video == true, returning false");
-        return false;
+        if(property_get("av.offload.enable", propValue, NULL)) {
+            bool prop_enabled = atoi(propValue) || !strncmp("true", propValue, 4);
+            if (!prop_enabled) {
+               ALOGW("offload disabled by av.offload.enable = %s ", propValue );
+               return false;
+            }
+        }
+        ALOGV("isOffloadSupported: has_video == true, property\
+                set to enable offload");
     }
 
     //If duration is less than minimum value defined in property, return false
@@ -2258,6 +2278,9 @@ AudioPolicyManagerBase::routing_strategy AudioPolicyManagerBase::getStrategy(
         // while key clicks are played produces a poor result
     case AudioSystem::TTS:
     case AudioSystem::MUSIC:
+#ifdef AUDIO_EXTN_INCALL_MUSIC_ENABLED
+    case AudioSystem::INCALL_MUSIC:
+#endif
         return STRATEGY_MEDIA;
     case AudioSystem::ENFORCED_AUDIBLE:
         return STRATEGY_ENFORCED_AUDIBLE;
@@ -2917,6 +2940,13 @@ const AudioPolicyManagerBase::VolumeCurvePoint
         sSpeakerMediaVolumeCurve, // DEVICE_CATEGORY_SPEAKER
         sDefaultMediaVolumeCurve  // DEVICE_CATEGORY_EARPIECE
     },
+#ifdef AUDIO_EXTN_INCALL_MUSIC_ENABLED
+    { // AUDIO_STREAM_INCALL_MUSIC
+        sDefaultMediaVolumeCurve, // DEVICE_CATEGORY_HEADSET
+        sSpeakerMediaVolumeCurve, // DEVICE_CATEGORY_SPEAKER
+        sDefaultMediaVolumeCurve  // DEVICE_CATEGORY_EARPIECE
+    },
+#endif
 };
 
 void AudioPolicyManagerBase::initializeVolumeCurves()
@@ -3588,6 +3618,10 @@ const struct StringToEnum sDeviceNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_SPEAKER),
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_WIRED_HEADSET),
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_WIRED_HEADPHONE),
+#ifdef QCOM_HARDWARE
+    STRING_TO_ENUM(AUDIO_DEVICE_OUT_ANC_HEADSET),
+    STRING_TO_ENUM(AUDIO_DEVICE_OUT_ANC_HEADPHONE),
+#endif
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_ALL_SCO),
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_ALL_A2DP),
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_AUX_DIGITAL),
@@ -3595,11 +3629,21 @@ const struct StringToEnum sDeviceNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_ANLG_DOCK_HEADSET),
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_USB_DEVICE),
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_USB_ACCESSORY),
+#ifdef AUDIO_EXTN_FM_ENABLED
+    STRING_TO_ENUM(AUDIO_DEVICE_OUT_FM),
+    STRING_TO_ENUM(AUDIO_DEVICE_OUT_FM_TX),
+#endif
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_ALL_USB),
+#ifdef AUDIO_EXTN_AFE_PROXY_ENABLED
+    STRING_TO_ENUM(AUDIO_DEVICE_OUT_PROXY),
+#endif
     STRING_TO_ENUM(AUDIO_DEVICE_OUT_REMOTE_SUBMIX),
     STRING_TO_ENUM(AUDIO_DEVICE_IN_BUILTIN_MIC),
     STRING_TO_ENUM(AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET),
     STRING_TO_ENUM(AUDIO_DEVICE_IN_WIRED_HEADSET),
+#ifdef QCOM_HARDWARE
+    STRING_TO_ENUM(AUDIO_DEVICE_IN_ANC_HEADSET),
+#endif
     STRING_TO_ENUM(AUDIO_DEVICE_IN_AUX_DIGITAL),
     STRING_TO_ENUM(AUDIO_DEVICE_IN_VOICE_CALL),
     STRING_TO_ENUM(AUDIO_DEVICE_IN_BACK_MIC),
@@ -3607,6 +3651,14 @@ const struct StringToEnum sDeviceNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_DEVICE_IN_ANLG_DOCK_HEADSET),
     STRING_TO_ENUM(AUDIO_DEVICE_IN_DGTL_DOCK_HEADSET),
     STRING_TO_ENUM(AUDIO_DEVICE_IN_USB_ACCESSORY),
+#ifdef AUDIO_EXTN_FM_ENABLED
+    STRING_TO_ENUM(AUDIO_DEVICE_IN_FM_RX),
+    STRING_TO_ENUM(AUDIO_DEVICE_IN_FM_RX_A2DP),
+#endif
+#ifdef QCOM_HARDWARE
+    STRING_TO_ENUM(AUDIO_DEVICE_IN_PROXY),
+    STRING_TO_ENUM(AUDIO_DEVICE_IN_COMMUNICATION),
+#endif
 };
 
 const struct StringToEnum sFlagNameToEnumTable[] = {
@@ -3616,6 +3668,14 @@ const struct StringToEnum sFlagNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_DEEP_BUFFER),
     STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD),
     STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_NON_BLOCKING),
+#ifdef QCOM_HARDWARE
+    STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_VOIP_RX),
+    STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_LPA),
+    STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_TUNNEL),
+#endif
+#ifdef AUDIO_EXTN_INCALL_MUSIC_ENABLED
+    STRING_TO_ENUM(AUDIO_OUTPUT_FLAG_INCALL_MUSIC),
+#endif
 };
 
 const struct StringToEnum sFormatNameToEnumTable[] = {
@@ -3624,12 +3684,39 @@ const struct StringToEnum sFormatNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_FORMAT_MP3),
     STRING_TO_ENUM(AUDIO_FORMAT_AAC),
     STRING_TO_ENUM(AUDIO_FORMAT_VORBIS),
+#ifdef QCOM_HARDWARE
+    STRING_TO_ENUM(AUDIO_FORMAT_AC3),
+    STRING_TO_ENUM(AUDIO_FORMAT_EAC3),
+    STRING_TO_ENUM(AUDIO_FORMAT_DTS),
+    STRING_TO_ENUM(AUDIO_FORMAT_DTS_LBR),
+    STRING_TO_ENUM(AUDIO_FORMAT_WMA),
+    STRING_TO_ENUM(AUDIO_FORMAT_WMA_PRO),
+    STRING_TO_ENUM(AUDIO_FORMAT_AAC_ADIF),
+    STRING_TO_ENUM(AUDIO_FORMAT_AMR_NB),
+    STRING_TO_ENUM(AUDIO_FORMAT_AMR_WB),
+    STRING_TO_ENUM(AUDIO_FORMAT_AMR_WB_PLUS),
+    STRING_TO_ENUM(AUDIO_FORMAT_EVRC),
+    STRING_TO_ENUM(AUDIO_FORMAT_EVRCB),
+    STRING_TO_ENUM(AUDIO_FORMAT_EVRCWB),
+    STRING_TO_ENUM(AUDIO_FORMAT_QCELP),
+    STRING_TO_ENUM(AUDIO_FORMAT_MP2),
+    STRING_TO_ENUM(AUDIO_FORMAT_EVRCNW),
+#endif
 };
 
 const struct StringToEnum sOutChannelsNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_CHANNEL_OUT_MONO),
     STRING_TO_ENUM(AUDIO_CHANNEL_OUT_STEREO),
+#ifdef QCOM_HARDWARE
+    STRING_TO_ENUM(AUDIO_CHANNEL_OUT_2POINT1),
+    STRING_TO_ENUM(AUDIO_CHANNEL_OUT_QUAD),
+    STRING_TO_ENUM(AUDIO_CHANNEL_OUT_SURROUND),
+    STRING_TO_ENUM(AUDIO_CHANNEL_OUT_PENTA),
+#endif
     STRING_TO_ENUM(AUDIO_CHANNEL_OUT_5POINT1),
+#ifdef QCOM_HARDWARE
+    STRING_TO_ENUM(AUDIO_CHANNEL_OUT_6POINT1),
+#endif
     STRING_TO_ENUM(AUDIO_CHANNEL_OUT_7POINT1),
 };
 
@@ -3637,6 +3724,12 @@ const struct StringToEnum sInChannelsNameToEnumTable[] = {
     STRING_TO_ENUM(AUDIO_CHANNEL_IN_MONO),
     STRING_TO_ENUM(AUDIO_CHANNEL_IN_STEREO),
     STRING_TO_ENUM(AUDIO_CHANNEL_IN_FRONT_BACK),
+#ifdef QCOM_HARDWARE
+    STRING_TO_ENUM(AUDIO_CHANNEL_IN_5POINT1),
+    STRING_TO_ENUM(AUDIO_CHANNEL_IN_VOICE_CALL_MONO),
+    STRING_TO_ENUM(AUDIO_CHANNEL_IN_VOICE_DNLINK_MONO),
+    STRING_TO_ENUM(AUDIO_CHANNEL_IN_VOICE_UPLINK_MONO),
+#endif
 };
 
 

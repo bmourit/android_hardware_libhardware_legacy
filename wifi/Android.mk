@@ -1,13 +1,13 @@
 # Copyright 2006 The Android Open Source Project
 
+LOCAL_CFLAGS += -DCONFIG_CTRL_IFACE_CLIENT_DIR=\"/data/misc/wifi/sockets\"
+LOCAL_CFLAGS += -DCONFIG_CTRL_IFACE_CLIENT_PREFIX=\"wpa_ctrl_\"
+
 ifdef WIFI_DRIVER_MODULE_PATH
 LOCAL_CFLAGS += -DWIFI_DRIVER_MODULE_PATH=\"$(WIFI_DRIVER_MODULE_PATH)\"
 endif
 ifdef WIFI_DRIVER_MODULE_ARG
 LOCAL_CFLAGS += -DWIFI_DRIVER_MODULE_ARG=\"$(WIFI_DRIVER_MODULE_ARG)\"
-endif
-ifdef WIFI_DRIVER_MODULE_AP_ARG
-LOCAL_CFLAGS += -DWIFI_DRIVER_MODULE_AP_ARG=\"$(WIFI_DRIVER_MODULE_AP_ARG)\"
 endif
 ifdef WIFI_DRIVER_MODULE_NAME
 LOCAL_CFLAGS += -DWIFI_DRIVER_MODULE_NAME=\"$(WIFI_DRIVER_MODULE_NAME)\"
@@ -28,19 +28,10 @@ ifdef WIFI_DRIVER_FW_PATH_PARAM
 LOCAL_CFLAGS += -DWIFI_DRIVER_FW_PATH_PARAM=\"$(WIFI_DRIVER_FW_PATH_PARAM)\"
 endif
 
-#ifeq ($(strip $(BOARD_WIFI_VENDOR)),realtek)
-#LOCAL_SRC_FILES += ../../device/actions/gs702a/hardware/wlan/rtl8188eu/libhardware_legacy/wifi/wifi_realtek.c
-#else ifeq ($(strip $(BOARD_WIFI_VENDOR)), mt6620)
-#LOCAL_SRC_FILES += ../../device/actions/gs702a/hardware/mtk4in1/wifi/libhardware_legacy/wifi/mtk_wifi.c
-#LOCAL_CFLAGS += -DMTK_WLAN_SUPPORT=\"$(MTK_WLAN_SUPPORT)\"
-#else ifeq ($(strip $(BOARD_WIFI_VENDOR)), mt5931)
-#LOCAL_SRC_FILES += ../../device/actions/gs702a/hardware/wifi/mt5931/libhardware_legacy/wifi/mtk_wifi.c
-#LOCAL_CFLAGS += -DMTK_WLAN_SUPPORT=\"$(MTK_WLAN_SUPPORT)\"
-#else
-
+ifeq ($(BOARD_WIFI_VENDOR),realtek)
+LOCAL_SRC_FILES += ../../device/actions/gs702a/hardware/wlan/rtl8188eu/libhardware_legacy/wifi/wifi_realtek.c
+else
 LOCAL_SRC_FILES += wifi/wifi.c
-ifeq ($(BOARD_HAVE_SAMSUNG_WIFI),true)
-LOCAL_CFLAGS += -DSAMSUNG_WIFI
 endif
 
 LOCAL_SHARED_LIBRARIES += libnetutils
